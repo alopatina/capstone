@@ -1,0 +1,310 @@
+---
+title: "data_2020"
+output: html_document
+
+Contents:
+  1. clean zoning data data from ZAP
+  2. clean demographic data from US Census and ACS
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+
+library(tigris)
+
+library(stringr)
+library(censusapi)
+library(ggthemes)
+```
+
+
+# 1. clean zoning data data from ZAP
+
+filtered from the ZAP website
+
+```{r}
+
+knitr::include_graphics("/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/data 2/Capture.jpg")
+
+```
+
+
+
+```{r}
+appl <- read_csv("/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/data 2/Zoning Application Portal data.csv")
+```
+
+```{r}
+appl %>%
+  count(applicants, sort = TRUE)
+```
+
+to filter I am assuming that accronyms stand for punblic angencies, while everything else is private applications
+we filter out non-ULURP as ULURP is required only when you need to make a zoning change https://www.brownstoner.com/development/ulurp/
+
+
+```{r}
+public <- appl %>% 
+  filter(applicants %in% c("HPD", "LPC", "DCAS", "DCP", "DEP", "ACS/CAS", "DPR", "DEP/CAS", "DOT", "DOS/CAS", "DBS", "CAS/EDC", "CFD/CAS", "DSBS", "EDC", "DBS/EDC", "CAS/DEP", "EDC/CAS", "HPD/EDC", "NYP/CAS", "BPC", "CAS/ACS", "DOP/CAS", "DSB", "SBP (S.I. BORO PRESIDENT", "CAS/CFD", "CFD", "DCP/JFK CENTER ASSOC LLC", "DHS/CAS", "DOT/CAS", "EDC/DERMOT QFL LLC", "EDC/DOT", "EDC/DPR", "NYCHA", "QNBP", "SBS (SMALL BUSINESS SERVICES)", "SBS/CAS", "ACS/CAS/DOA", "ACS/DFA/CAS", "BOE/CAS", "BOE/NYP (BD OF ELECTIONS & NYPD)", "BPC (BATTERY PARK CITY AUTHORITY)", "BPC AUTHORITY/MUSUEM OF JEWISH HERITAGE/PILLSBURY WINTHROP", "BPCA", "BPL (BKLYN PUBLIC LIBRARY)/CAS", "BPL (BROOKLYN PUBLIC LIBRARY)/CAS", "BPX,BPK, & BPS", "CAS AND EDC", "CAS/ACS/DFA", "CAS/BEL(BOE)", "CAS/BKLYN RENAISSANCE/EDC", "CAS/CACS", "CAS/DCA(CULTURAL AFFAIRS)", "CAS/DOS", "CAS/DOT", "CAS/DRP", "CAS/FTA", "CAS/NPD", "CAS/NYP", "CAS/NYPD", "CAS/SBS (SMALL BUSINESS SERVICES)", "CB 8/CIVITAS/ERSA/FRIENDS OF U.E.S.&E79ST NBHD/BACHNER,TALLY", "CB11 (COMMUNITY BOARD #11)", "CB13/ROYAL RANCH CIVIC ASSOC", "CB6 (COMMUNITY BD 6)", "CB6/EAST SIDE REZONING ALLIANCE	", "CB8 (COMMUNITY BD 8)", "CBR BLDG CORP", "CBX08", "CCA/CAS (CULTURAL AFFAIRS)", "CDA/CAS", "CDGP, LLC"), `dcp-ulurp-nonulurp` == "ULURP")
+```
+
+TO DO: need to ask ZAP about shapefiles
+
+```{r}
+nyzma <- read_sf("C:/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/rezonings from Alexia/nyzma/geo_export_0f3bcbeb-a5f6-4103-83fe-794dad40af53.shp") 
+
+# nyzma matadata: https://www1.nyc.gov/assets/planning/download/pdf/data-maps/open-data/nyzma_metadata.pdf?r=1219
+```
+
+```{r}
+pub_geo <- public %>% 
+  left_join(nyzma, by = c("dcp-projectname" = "project_na")) %>% 
+  select(`dcp-projectbrief`, `geometry`, everything()) %>% 
+  mutate(geometry_1 = as.character(geometry)) %>% 
+  filter(geometry_1 !='list()') %>% 
+  select(-geometry_1)
+```
+
+
+```{r}
+class(pub_geo)
+
+# convert to sf format
+pub_geo_sf <- st_sf(pub_geo, crs = 2263)
+
+st_crs(pub_geo_sf)
+
+# this file contains all publicly-initiated rezonings 2000-2007
+```
+
+
+# 2. clean demographic data from US Census and ACS -- demographic trends between 1990 to 2018
+
+we standardize all census boundaries to the boundaries of the last census in 2010
+
+```{r}
+# add key for censusapi
+Sys.setenv(CENSUS_KEY = "2ce05dbf2fa6fb1131a28747d83bf6b622709f54")
+```
+
+
+We extract data from 3 surveys: 1990, 2000 and 2010
+First we extract names of the variables
+```{r}
+sf1_2010_meta <- listCensusMetadata("dec/sf1", 2010)
+sf1_2000_meta <- listCensusMetadata("sf3", 2000)
+sf1_1990_meta <- listCensusMetadata("sf3", 1990)
+```
+
+```{r}
+# get NYC
+# NYC code 36
+# Bronx County 005
+# New York County 061
+# Kings County 047
+# Queens County 081
+# Richmond County 085
+
+# total housing units H001001
+
+# get housing units in NYC for 2010 census
+sf1_2010_cen <- getCensus(name = "dec/sf1", vintage = 2010, vars = c(house = "H001001"), region = "tract:*",
+                          regionin = "state:36+county:061,005,047,081,085")
+```
+
+```{r}
+# get housing units in NYC for 2000 census
+sf3_2000_cen <- getCensus(name = "sf3", vintage = 2000, vars = c(house = "H001001"), region = "tract:*",
+                          regionin = "state:36+county:061,005,047,081,085")
+```
+
+```{r}
+sf3_1990_cen <- getCensus(name = "sf3", vintage = 1990, vars = c(house = "H0010001"), region = "tract:*",
+                          regionin = "state:36+county:061,005,047,081,085")
+```
+
+
+download crosswalk from here https://s4.ad.brown.edu/projects/diversity/Researcher/LTBDDload/DataList.aspx
+
+The 2000-2010 crosswalk identifies what kind of boundary change occurred for each tract (the column heading is "changetype"). 1 = no change. 2 = multiple tracts merged to one. 3 = one tract split into more than one. 4 = 2+ tracts reconfigured into different 2+ tracts.
+
+```{r}
+crosswalk_00 <- read_csv("C:/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/data 2/crosswalk_2000_2010.csv")
+
+
+crosswalk_90 <- read_csv("C:/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/data 2/crosswalk_1990_2010.csv")
+```
+
+```{r}
+# Filter observations in MN
+mn <- paste0("^36", "061", collapse = "|")
+# Queens
+qn <- paste0("^36", "081", collapse = "|")
+# brooklyn
+bn <- paste0("^36", "047", collapse = "|")
+# bronx
+bx <- paste0("^36", "005", collapse = "|")
+# staten island
+st <- paste0("^36", "085", collapse = "|")
+
+codes_all <- c("^36047", "^36005", "^36061", "^36081", "^36085")
+
+
+```
+
+```{r}
+crosswalk_mn <- crosswalk_00 %>% 
+  filter(str_detect(trtid00, mn))
+
+crosswalk_qn <- crosswalk_00 %>% 
+  filter(str_detect(trtid00, qn))
+
+crosswalk_bn <- crosswalk_00 %>% 
+  filter(str_detect(trtid00, bn))
+
+crosswalk_bx <- crosswalk_00 %>% 
+  filter(str_detect(trtid00, bx))
+
+crosswalk_st <- crosswalk_00 %>% 
+  filter(str_detect(trtid00, st))
+
+crosswalk_all <- bind_rows(crosswalk_mn, crosswalk_qn, crosswalk_bn, crosswalk_bx, crosswalk_st)
+
+```
+
+# TO DO loop https://stackoverflow.com/questions/35962426/multiple-strings-with-str-detect-r
+
+
+The next step is to interpolate the data for the year 2000 to adjust to the 2010 census tracts. The code below does the interpolation. It takes the 2000 census data frame and adds a variable “trtid00” by pasting together the state, county, and tract variables. With this new variable, it is joined with the crosswalk data. The weighting variable from the crosswalk data is used to calculate the interpolated total number of housing units. With the weight applied, the adjustments are added together for the 2010 tracts.
+
+
+```{r}
+interpolated_2000 <- sf3_2000_cen %>% 
+  mutate(trtid00 = paste0(state, county, tract)) %>% 
+  full_join(crosswalk_all, by = "trtid00") %>% 
+  mutate(weight = as.numeric(weight)) %>% 
+  mutate(H001001_2000 = round(H001001 * weight))%>% 
+  select(trtid10, H001001_2000) %>% 
+  group_by(trtid10) %>% 
+  summarise_all(sum)%>% 
+#  filter(str_detect(trtid10, codes_all)) %>% 
+  mutate(state = str_sub(trtid10, 1, 2),
+         county = str_sub(trtid10, 3, 5),
+         tract = str_sub(trtid10, 6, 11),) %>% 
+  select(state, county, tract, H001001_2000)  
+```
+
+2000 housing unit data is now ready to be joined with our 2010 data. Using dplyr makes this easy to do and intuitive to read. Note that extra steps would be needed if you are working with dollar values, such as median home income. When working with dollar values, you’ll also need to adjust for inflation.
+As shown below, we join the data by their matching identifiers, and then we calculate an additional variable to determine the growth rate from 2000 to 2010.
+
+```{r}
+h_units_2000_2010 <- interpolated_2000 %>% 
+  full_join(sf1_2010_cen, by = c("state", "county", "tract")) %>% 
+  rename(H001001_2010 = H001001) %>% 
+  mutate(growth_rate = round(((H001001_2010 - H001001_2000) / H001001_2000) * 100, digits = 2)) %>% 
+  unite("id", c(state, county, tract), sep = "")
+```
+
+
+ crosswalk with 1990
+
+```{r}
+crosswalk_mn_90 <- crosswalk_90 %>% 
+  filter(str_detect(trtid90, mn))
+
+crosswalk_qn_90 <- crosswalk_90 %>% 
+  filter(str_detect(trtid90, qn))
+
+crosswalk_bn_90 <- crosswalk_90 %>% 
+  filter(str_detect(trtid90, bn))
+
+crosswalk_bx_90 <- crosswalk_90 %>% 
+  filter(str_detect(trtid90, bx))
+
+crosswalk_st_90 <- crosswalk_90 %>% 
+  filter(str_detect(trtid90, st))
+
+crosswalk_all_90 <- bind_rows(crosswalk_mn_90, crosswalk_qn_90, crosswalk_bn_90, crosswalk_bx_90, crosswalk_st_90)
+```
+
+```{r}
+interpolated_1990 <- sf3_1990_cen %>% 
+  mutate(trtid90 = paste0(state, county, tract)) %>% 
+  full_join(crosswalk_all_90, by = "trtid90") %>% 
+  mutate(weight = as.numeric(weight)) %>% 
+  mutate(H001001_1990 = round(H0010001 * weight))%>% 
+  select(trtid10, H001001_1990) %>% 
+  group_by(trtid10) %>% 
+  summarise_all(sum) %>% 
+#  filter(str_detect(trtid10, codes_all)) %>% 
+  mutate(state = str_sub(trtid10, 1, 2),
+         county = str_sub(trtid10, 3, 5),
+         tract = str_sub(trtid10, 6, 11)) %>% 
+  select(state, county, tract, H001001_1990)  
+```
+
+```{r}
+h_units_1990_2010 <- interpolated_1990 %>% 
+  full_join(sf1_2010_cen, by = c("state", "county", "tract")) %>% 
+  rename(H001001_2010 = H001001) %>% 
+  mutate(growth_rate = round(((H001001_2010 - H001001_1990) / H001001_1990) * 100, digits = 2)) %>% 
+  unite("id", c(state, county, tract), sep = "")
+```
+
+```{r}
+h_units900010 <- h_units_1990_2010 %>% 
+  full_join(h_units_2000_2010, by = c("id" = "id")) %>% 
+  select(-growth_rate.x, -growth_rate.y, - H001001_2010.x) %>% 
+  filter(id != "NANANA")
+```
+
+# 3. Spatial join with the zoning file (pub_geo_sf)
+
+geotract source: https://data.cityofnewyork.us/City-Government/2010-Census-Tracts/fxpq-c8ku
+
+```{r}
+geotract <- read_sf("C:/Users/aslop/Documents/CLASSES/FALL 2019/Capstone class/data/data 2/2010 Census Tracts/geo_export_cd7ccd97-ce4b-42f9-8b61-76eaa35bf215.shp")
+
+# pad county with 00, add 36
+
+geotract_1 <- geotract %>% 
+#  mutate(county = str_pad(boro_code, width = 3, side = "left", pad = "0"),
+#         state = "36") %>% 
+  mutate(county = case_when(boro_name == "Manhattan" ~ "061",
+                            boro_name == "Queens" ~ "081",
+                            boro_name == "Bronx" ~ "005",
+                            boro_name == "Brooklyn" ~ "047",
+                            boro_name == "Staten Island" ~ "085"),
+         state = "36") %>% 
+  unite("id", c(state, county, ct2010), sep = "", remove = FALSE)
+    
+ 
+```
+
+add geographic shapes to h_units900010
+
+```{r}
+h_units900010_geo <- h_units900010 %>% 
+  left_join(geotract_1, by = c("id" = "id")) %>% 
+  st_sf(crs = 2263)
+
+st_crs(h_units900010_geo) 
+
+class(pub_geo_sf)
+```
+
+add demographic data to the identified zonings by clipping with geoshapes
+
+```{r}
+intersect <- st_intersection(h_units900010_geo, pub_geo_sf)
+```
+
+```{r}
+# view on the google map
+leaflet(intersect) %>% 
+  addPolygons() %>% 
+  addTiles()
+```
+
